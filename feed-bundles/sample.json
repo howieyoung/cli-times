@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "issued": "2026-08-08T00:00:00Z",
+  "expires": "2026-08-09T12:00:00Z",
+  "lines": [
+    { "t": "OpenAI ships GPT-5.5; devs report faster tool calls", "src": "Hacker News", "lang": "en", "topic": "llm" },
+    { "t": "Anthropic 發布 Claude Code 2.2,新增原生 statusLine 主題", "src": "官方部落格", "lang": "zh-TW", "topic": "claude-code" },
+    { "t": "New open-source agent framework hits 10k stars in a week", "src": "GitHub Trending", "lang": "en", "topic": "agents" },
+    { "t": "研究:多代理協作在程式碼審查上顯著降低漏報率", "src": "arXiv", "lang": "zh-TW", "topic": "research" }
+  ]
+}

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- macOS timer for the Cli Times updater. Runs the fetch every 6h.
+     Install: copy to ~/Library/LaunchAgents/, edit the binary path, then
+       launchctl load ~/Library/LaunchAgents/com.clitimes.updater.plist
+     Or (recommended) let `brew services` manage it once distributed via the tap.
+     RunAtLoad runs one fetch at login so a fresh install isn't blank. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.clitimes.updater</string>
+  <key>ProgramArguments</key>
+  <array>
+    <!-- replace with the installed path, e.g. /opt/homebrew/bin/cli-times-update -->
+    <string>/usr/local/bin/cli-times-update</string>
+  </array>
+  <key>StartInterval</key><integer>21600</integer> <!-- 6h -->
+  <key>RunAtLoad</key><true/>
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
+</dict>
+</plist>

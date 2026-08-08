@@ -1,0 +1,15 @@
+# Linux (systemd --user) service for the Cli Times updater — one fetch per activation.
+# Install (per-user):
+#   cp cli-times-update.{service,timer} ~/.config/systemd/user/
+#   loginctl enable-linger "$USER"          # run even when not logged in
+#   systemctl --user enable --now cli-times-update.timer
+[Unit]
+Description=Cli Times feed updater (fetch + verify signed AI-news bundle)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# replace with the installed path, e.g. /usr/local/bin/cli-times-update
+ExecStart=%h/.local/bin/cli-times-update
+Nice=10

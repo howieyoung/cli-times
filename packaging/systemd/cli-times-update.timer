@@ -1,0 +1,13 @@
+# Fires the updater ~every 6h, with catch-up on wake and randomized spread so
+# installs don't stampede the CDN at the same instant.
+[Unit]
+Description=Run Cli Times updater every 6h
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=6h
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,96 @@
+# Fully automated feed publisher — runs on GitHub's servers, no laptop needed.
+#   crawl (HN + RSS) -> OpenAI draft -> deterministic risk flagging -> DROP flagged
+#   lines -> Ed25519 sign -> deploy to Cloudflare Pages (the exact URL pinned into
+#   every shipped binary). No human in the loop: unreviewed/flagged lines are
+#   dropped (never shown), and a too-thin feed refuses to publish.
+#
+# One-time setup (Settings -> Secrets and variables -> Actions):
+#   OPENAI_API_KEY        your OpenAI key (set a spend cap on the OpenAI dashboard)
+#   CLI_TIMES_SIGNING_KEY the CONTENTS of keys/priv.key (base64 text) — the feed
+#                         signing key becomes "hot" here by design; protect this repo
+#                         with 2FA + restricted secret access + environment rules
+#   CLOUDFLARE_API_TOKEN  a token scoped to Cloudflare Pages:Edit
+#   CLOUDFLARE_ACCOUNT_ID your Cloudflare account id
+# Then trigger once via the "Run workflow" button (workflow_dispatch); after that
+# the schedule keeps the feed fresh on its own.
+name: publish-feed
+
+on:
+  schedule:
+    - cron: "0 */12 * * *"   # every 12h UTC (content cadence); 72h expiry gives slack
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write   # open/update a failure-alert issue (see the last step)
+
+concurrency:
+  group: publish-feed
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Restore signing key (ephemeral; removed at end)
+        run: |
+          mkdir -p keys
+          printf '%s' "${{ secrets.CLI_TIMES_SIGNING_KEY }}" > keys/priv.key
+          chmod 600 keys/priv.key
+
+      - name: Curate — crawl + OpenAI draft (auto risk-flagging)
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: go run ./cmd/curate -n 18
+
+      - name: Sign — drop flagged lines, require a real feed, 72h window
+        run: |
+          DATE="$(date -u +%F)"
+          DRAFT="feed-bundles/draft-${DATE}.json"
+          test -f "$DRAFT" || { echo "no draft produced ($DRAFT) — refusing to publish"; exit 1; }
+          go run ./cmd/sign bundle \
+            -key keys/priv.key -kid k1 \
+            -in "$DRAFT" -out public/feed.json \
+            -strip-review -min-lines 6 -expires-hours 72
+
+      - name: Deploy to Cloudflare Pages (the pinned URL)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx --yes wrangler@latest pages deploy public --project-name cli-times-feed --branch main
+
+      - name: Wipe signing key
+        if: always()
+        run: rm -f keys/priv.key
+
+      # If any step above failed, the live feed will drift toward expiry and
+      # every installed ticker eventually blanks — so make failure LOUD. Opens a
+      # GitHub issue (deduped by label: comment on the open one instead of spamming
+      # a new issue every 12h). Runs only on failure and cannot itself fail the run.
+      - name: Alert on failure — open/update an issue
+        if: failure()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          run_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          body="Automated feed publish FAILED at $(date -u +%FT%TZ).
+
+          Run: $run_url
+
+          The live feed drifts toward its 72h expiry while this is broken — installed tickers blank once it lapses.
+          Common causes: OPENAI_API_KEY quota/spend cap hit, CLI_TIMES_SIGNING_KEY missing/rotated, Cloudflare deploy token expired, or too few lines survived (min-lines)."
+          existing="$(gh issue list --state open --label publish-failure --json number --jq '.[0].number' 2>/dev/null || true)"
+          if [ -n "$existing" ]; then
+            printf '%s\n' "$body" | gh issue comment "$existing" --body-file -
+          else
+            gh label create publish-failure --color B60205 --description "Automated feed publisher failed" 2>/dev/null || true
+            printf '%s\n' "$body" | gh issue create --title "🚨 Cli Times feed publish is failing" --label publish-failure --body-file -
+          fi

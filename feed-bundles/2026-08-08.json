@@ -1,0 +1,17 @@
+{
+  "v": 1,
+  "issued": "2026-08-08T00:00:00Z",
+  "expires": "2026-08-15T00:00:00Z",
+  "lines": [
+    { "t": "DeepSeek V4 Flash hits 89% on ARC-AGI-1, 61.4% on ARC-AGI-2 at cents/task", "src": "ARC Prize", "url": "https://arcprize.org/results/deepseek-v4-flash-0731", "lang": "en", "topic": "llm" },
+    { "t": "AMD acquires Taalas, which etches AI model weights directly into silicon", "src": "The Register", "url": "https://www.theregister.com/systems/2026/08/06/amd-acquires-ai-chip-startup-taalas-to-boost-inference-performance-by-etching-models-into-silicon/5284344", "lang": "en", "topic": "funding" },
+    { "t": "Oracle bars AI-generated contributions to OpenJDK over security and IP risk", "src": "The Register", "url": "https://www.theregister.com/ai-and-ml/2026/08/03/as-larry-ellison-bets-the-farm-oracle-says-it-loves-ai-written-code-just-not-in-openjdk/5281851", "lang": "en", "topic": "policy" },
+    { "t": "Databricks says its AI Gateway smart router cut coding-agent cost over 30%", "src": "Databricks", "url": "https://www.databricks.com/blog/managing-ai-coding-costs-scale", "lang": "en", "topic": "tooling" },
+    { "t": "Anthropic retunes Fable 5 filters, cutting biology false-positives ~85%", "src": "Anthropic", "url": "https://www.anthropic.com/news/improving-fable-5-s-biology-safeguards", "lang": "en", "topic": "research" },
+    { "t": "Anthropic names Tino Cuellar its first Chief Global Affairs Officer", "src": "Anthropic", "url": "https://www.anthropic.com/news/tino-cuellar", "lang": "en", "topic": "policy" },
+    { "t": "US Energy Dept. opens Genesis initiative for open-weight science AI models", "src": "US DOE / Argonne", "url": "https://genesisopenmodels.anl.gov/", "lang": "en", "topic": "policy" },
+    { "t": "Samsung unveils zHBM concept memory for AI data centers via wafer bonding", "src": "Tom's Hardware", "url": "https://www.tomshardware.com/pc-components/dram/samsung-debuts-three-next-generation-memory-technologies-for-ai-data-centers-zhbm-znand-o-and-bv-nand-all-rely-on-advanced-wafer-bonding-technologies", "lang": "en", "topic": "other" },
+    { "t": "七萬次測試發現 16 款主流 LLM 除 Grok 外多偏自由左派", "src": "科技新報 TechNews", "url": "https://technews.tw/2026/08/02/mainstream-ai-models-liberal-left/", "lang": "zh-TW", "topic": "research" },
+    { "t": "美擬禁用中國開源 AI 模型,估美企年成本恐增 30-120 億美元", "src": "科技新報 TechNews", "url": "https://technews.tw/2026/08/03/potential-us-ban-on-chinese-ai-models-could-cost-american-businesses-us12b-a-year", "lang": "zh-TW", "topic": "policy" }
+  ]
+}

@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cli Times — the AI daily brief inside your CLI</title>
+<meta name="description" content="A curated one-line AI-news ticker that lives in your AI coding CLI's wait state. Free, opt-in, no telemetry.">
+<style>
+  :root{
+    --bg:#0d0d0d; --panel:#141413; --ink:#f4f1ea; --muted:#8a887f; --dim:#5a584f;
+    --accent:#4db3a4; --accent2:#e0a869; --line:#26251f; --link:#7fb4d6;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.65 ui-monospace,"SF Mono",Menlo,Consolas,"PingFang TC","Microsoft JhengHei",monospace;}
+  .wrap{max-width:760px;margin:0 auto;padding:40px 22px 90px}
+  a{color:var(--link);text-decoration:none} a:hover{text-decoration:underline}
+  header{display:flex;justify-content:space-between;align-items:baseline;gap:16px;flex-wrap:wrap}
+  .brand{font-size:19px;font-weight:600;letter-spacing:.3px}
+  .brand .mk{color:var(--accent)}
+  .langtog button{background:none;border:1px solid var(--line);color:var(--muted);
+    font:inherit;font-size:12px;padding:3px 9px;border-radius:6px;cursor:pointer}
+  .langtog button[aria-pressed="true"]{color:var(--ink);border-color:var(--dim)}
+  h1{font-size:26px;line-height:1.25;margin:34px 0 10px;font-weight:600}
+  .sub{color:var(--muted);font-size:15px;margin:0 0 26px}
+  .term{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;margin:22px 0;overflow:hidden}
+  .term .bar{color:var(--dim);font-size:12px;margin-bottom:9px}
+  .ticker{white-space:nowrap;color:var(--muted)}
+  .ticker .mk{color:var(--accent)} .ticker .src{color:var(--dim)}
+  h2{font-size:15px;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);
+    margin:40px 0 12px;font-weight:600}
+  p{margin:0 0 14px}
+  code,pre{font-family:inherit}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;overflow-x:auto;font-size:13.5px;color:var(--ink);margin:12px 0}
+  pre .c{color:var(--dim)}
+  .pill{display:inline-block;border:1px solid var(--line);border-radius:999px;
+    padding:2px 11px;font-size:12px;color:var(--muted);margin:2px 6px 2px 0}
+  ul{padding-left:20px;margin:0 0 14px} li{margin:5px 0;color:var(--muted)}
+  li b{color:var(--ink);font-weight:600}
+  .cta{display:inline-block;background:var(--accent);color:#08201c;font-weight:600;
+    padding:10px 18px;border-radius:8px;margin-top:6px}
+  .cta:hover{text-decoration:none;filter:brightness(1.08)}
+  .cta.ghost{background:none;border:1px solid var(--dim);color:var(--ink)}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);
+    color:var(--dim);font-size:12.5px}
+  [data-zh]{display:none}
+  html[data-lang="zh"] [data-en]{display:none}
+  html[data-lang="zh"] [data-zh]{display:revert}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="brand"><span class="mk">◆</span> Cli Times</div>
+    <div class="langtog" role="group" aria-label="language">
+      <button data-set="en" aria-pressed="true">EN</button>
+      <button data-set="zh" aria-pressed="false">繁中</button>
+    </div>
+  </header>
+
+  <h1><span data-en>The AI daily brief, inside your CLI.</span>
+      <span data-zh>CLI 裡的 AI 日報。</span></h1>
+  <p class="sub">
+    <span data-en>A curated one-line AI-news ticker that lives in the wait state of your AI coding CLI. Free, opt-in, no telemetry.</span>
+    <span data-zh>在你的 AI coding CLI 等待回應時,狀態列輪播一行人工策展的 AI 新聞。免費、自主安裝、零遙測。</span>
+  </p>
+
+  <div class="term" aria-hidden="true">
+    <div class="bar">~/project · claude</div>
+    <div class="ticker" id="tick"><span class="mk">⠋</span> CT: DeepSeek V4 Flash hits 89% on ARC-AGI-1 at cents/task&nbsp;&nbsp;<span class="src">· ARC Prize</span></div>
+  </div>
+
+  <span class="pill" data-en>1-line install</span><span class="pill" data-zh>一行安裝</span>
+  <span class="pill" data-en>no API tokens used</span><span class="pill" data-zh>不耗 API token</span>
+  <span class="pill" data-en>renderer is open-source</span><span class="pill" data-zh>renderer 開源</span>
+
+  <h2><span data-en>Try it</span><span data-zh>試用</span></h2>
+  <p>
+    <span data-en>macOS / Linux — build from source via Homebrew (no unsigned binary, nothing to trust blindly):</span>
+    <span data-zh>macOS / Linux — 用 Homebrew 從原始碼編譯(沒有未簽章執行檔,不用盲目信任):</span>
+  </p>
+  <pre><span class="c"># <span data-en>installs + builds the open-source renderer &amp; updater</span><span data-zh>安裝並從原始碼編譯開源 renderer 與 updater</span></span>
+brew install howieyoung/tap/cli-times</pre>
+  <p>
+    <span data-en>Start the ~6-hourly updater (one pull-only HTTPS request each time) so the brief stays fresh:</span>
+    <span data-zh>啟動每約 6 小時更新一次的 updater(每次只做一個「只拉取」的 HTTPS 請求),讓日報保持最新:</span>
+  </p>
+  <pre>brew services start cli-times</pre>
+  <p>
+    <span data-en>Then add this to <code>~/.claude/settings.json</code> and reopen Claude Code:</span>
+    <span data-zh>接著把這段加進 <code>~/.claude/settings.json</code>,重開 Claude Code:</span>
+  </p>
+  <pre>  "statusLine": { "type": "command", "command": "cli-times", "refreshInterval": 1 }</pre>
+  <p>
+    <span data-en>See the full brief any time (source links are clickable in modern terminals):</span>
+    <span data-zh>隨時看完整日報(連結在現代終端機可直接點):</span>
+  </p>
+  <pre>cli-times today</pre>
+  <p>
+    <span data-en>If the status line is blank, the signed feed hasn't landed yet — run <code>cli-times today</code> to check, or wait for the updater's next run.</span>
+    <span data-zh>若狀態列空白,表示簽章日報還沒抓到——先跑 <code>cli-times today</code> 確認,或等 updater 下次更新即可。</span>
+  </p>
+
+  <h2><span data-en>Will it cost me anything?</span><span data-zh>會花到我的錢或額度嗎?</span></h2>
+  <p>
+    <span data-en>No. The status line runs locally and does not consume API tokens; the renderer has zero network code — it reads one local file and prints one line. It never touches your Claude or Codex account, and never reads your code, prompts, or files. A separate updater makes one pull-only HTTPS request every ~6h to fetch the day's signed brief; the CDN sees your IP like any download, we receive only aggregate counts, and it sends no identifiers, cookies, or content back.</span>
+    <span data-zh>不會。狀態列在本機執行、不消耗 API token;renderer 沒有任何網路程式碼——只讀一個本機檔案、印一行字,永遠不碰你的 Claude / Codex 帳號,也不讀你的程式碼、prompt 或檔案。另有一支獨立的 updater 每約 6 小時做一次「只拉取」的 HTTPS 請求抓當日的簽章日報;CDN 會像任何下載一樣看到你的 IP,我們只收到聚合數字,不送任何識別碼、cookie 或內容。</span>
+  </p>
+
+  <h2><span data-en>For content partners</span><span data-zh>內容合作 / 收錄</span></h2>
+  <p>
+    <span data-en>Building something in AI that developers should know about — a launch, a tool, a paper, a community? We curate the brief by hand and welcome sources. Tell us what to watch, or ask about a clearly-labeled sponsor slot.</span>
+    <span data-zh>你在做 AI 領域值得開發者知道的東西——新產品、工具、論文、社群?我們的日報由人工策展,歡迎推薦來源。告訴我們該追蹤什麼,或詢問清楚標示的贊助檔期。</span>
+  </p>
+  <p>
+    <a class="cta" href="mailto:howie@protico.io?subject=Cli%20Times%20%E2%80%94%20content%20partner&body=What%20to%20cover%2Fwatch%3A%0AURL%3A%0AWhy%20it%20matters%20for%20developers%3A%0A">
+      <span data-en>Get in touch → howie@protico.io</span><span data-zh>聯絡我們 → howie@protico.io</span>
+    </a>
+  </p>
+
+  <footer>
+    <p style="color:var(--dim)">
+      <span data-en>Cli Times is an experimental, opt-in developer-media project, separate from Protico. Renderer source and threat model are public. Not affiliated with or endorsed by Anthropic; works with Claude Code.</span>
+      <span data-zh>Cli Times 是實驗性、自主安裝的開發者媒體專案,與 Protico 分開。Renderer 原始碼與威脅模型公開。與 Anthropic 無隸屬或背書關係;可搭配 Claude Code 使用。</span>
+    </p>
+  </footer>
+</div>
+
+<script>
+"use strict";
+// Language toggle (EN default; remembers choice for the session).
+const root = document.documentElement;
+document.querySelectorAll(".langtog button").forEach(b => {
+  b.addEventListener("click", () => {
+    const lang = b.dataset.set;
+    root.setAttribute("data-lang", lang);
+    document.querySelectorAll(".langtog button").forEach(x =>
+      x.setAttribute("aria-pressed", String(x.dataset.set === lang)));
+    document.documentElement.lang = lang === "zh" ? "zh-Hant" : "en";
+  });
+});
+// Tiny live spinner in the demo ticker (cosmetic only; mirrors the real 1fps icon).
+const frames = ["⠋","⠙","⠹","⠸","⠼","⠴","⠦","⠧","⠇","⠏"];
+const mk = document.querySelector("#tick .mk");
+let i = 0;
+setInterval(() => { i = (i + 1) % frames.length; if (mk) mk.textContent = frames[i]; }, 1000);
+</script>
+</body>
+</html>

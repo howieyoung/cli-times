@@ -1,0 +1,37 @@
+# SECRETS — never commit signing keys (ARCHITECTURE.md §2.4: private key stays offline)
+keys/
+*.key
+priv.key
+.env
+.env.*
+# Cloudflare wrangler local cache holds the account id / auth token — never commit
+.wrangler/
+
+# CONFIDENTIAL — must never reach the public repo (Protico intel, finance, ops)
+research/
+finance/
+PUBLISH.md
+# Internal methodology docs — kept private by choice (not needed to build/CI)
+ARCHITECTURE.md
+CONTENT-POLICY.md
+
+# Draft/candidate content is unreviewed — never publish as canonical
+feed-bundles/candidates-*.md
+feed-bundles/draft-*.json
+feed-bundles/review-*.md
+
+# runtime cache / state
+*.cache
+cache.json
+/tmp-*
+
+# build artifacts
+/bin/
+/dist/
+clt-sign
+clt-render
+*.out
+
+# OS / editor
+.DS_Store
+*.swp
