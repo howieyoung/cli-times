@@ -15,11 +15,17 @@
 # the schedule keeps the feed fresh on its own.
 name: publish-feed
 
+# SECURITY: triggers are ONLY schedule + workflow_dispatch. Do NOT add
+# `pull_request` — that would run this workflow (and expose the signing key /
+# Cloudflare / OpenAI secrets) to fork PRs. Forks cannot trigger these two events,
+# so secrets are never reachable from a contributed PR.
 on:
   schedule:
     - cron: "0 */12 * * *"   # every 12h UTC (content cadence); 72h expiry gives slack
   workflow_dispatch: {}
 
+# Least privilege: the default GITHUB_TOKEN can only read the repo and open the
+# failure-alert issue. It cannot push, release, or touch other repos.
 permissions:
   contents: read
   issues: write   # open/update a failure-alert issue (see the last step)
@@ -33,9 +39,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
+      # Actions pinned to a full commit SHA (supply-chain hardening): a moved tag
+      # can't swap the code under us. Bump deliberately when updating.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
 
