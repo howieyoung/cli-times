@@ -76,8 +76,14 @@ func bundle(args []string) {
 
 	privB64, err := os.ReadFile(*keyPath)
 	must(err)
-	privRaw, err := base64.StdEncoding.DecodeString(string(privB64))
+	// Trim surrounding whitespace/newlines: a key file (or a CI secret pasted with
+	// a trailing newline) commonly ends in "\n", which is not valid base64 and would
+	// otherwise fail decoding at the char just past the key.
+	privRaw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(string(privB64)))
 	must(err)
+	if len(privRaw) != ed25519.PrivateKeySize {
+		fail("bundle: private key is %d bytes, want %d — check the key file / secret", len(privRaw), ed25519.PrivateKeySize)
+	}
 	priv := ed25519.PrivateKey(privRaw)
 
 	payload, err := os.ReadFile(*in)
