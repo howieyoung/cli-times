@@ -39,6 +39,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/howieyoung/cli-times/internal/feed"
 	"github.com/howieyoung/cli-times/internal/sanitize"
@@ -46,23 +47,39 @@ import (
 )
 
 const (
-	hnBest      = "https://hacker-news.firebaseio.com/v0/beststories.json"
-	hnItem      = "https://hacker-news.firebaseio.com/v0/item/%d.json"
-	maxHeadline = 85
-	recencyDays = 14
-	maxCands    = 60
-	spotCheck   = 3 // how many auto-cleared lines to mark for a random spot-check
+	hnBest         = "https://hacker-news.firebaseio.com/v0/beststories.json"
+	hnItem         = "https://hacker-news.firebaseio.com/v0/item/%d.json"
+	maxHeadline    = 85
+	recencyDays    = 14
+	maxCands       = 120 // after dedup, how many ranked candidates to retain
+	maxPromptCands = 80  // how many to actually feed the model / list in candidates.md
+	spotCheck      = 3   // how many auto-cleared lines to mark for a random spot-check
 )
 
+// feeds are the 🟢 RSS/Atom sources. aiOnly=true means the whole feed is
+// AI-scoped (no keyword filter); aiOnly=false feeds are keyword-filtered.
+// Every URL below was verified live (HTTP 200 + valid RSS/Atom) on 2026-08-09.
+// The crawler follows redirects and skips a dead feed gracefully (logged [warn]).
 var feeds = []struct {
 	URL, Label string
 	aiOnly     bool
 }{
-	{"https://simonwillison.net/atom/everything/", "Simon Willison", true},
+	// Official vendor sources (highest editorial value — product/feature releases)
+	{"https://openai.com/news/rss.xml", "OpenAI", true},
+	{"https://blog.google/technology/ai/rss/", "Google AI", true},
+	{"https://deepmind.google/blog/rss.xml", "DeepMind", true},
 	{"https://huggingface.co/blog/feed.xml", "Hugging Face", true},
+	{"https://about.fb.com/news/tag/ai/feed/", "Meta AI", true},
+	{"https://blog.cloudflare.com/tag/ai/rss/", "Cloudflare", true},
+	// Reputable outlets / research
+	{"https://simonwillison.net/atom/everything/", "Simon Willison", true},
 	{"https://www.theregister.com/software/ai_ml/headlines.atom", "The Register", true},
 	{"https://arstechnica.com/ai/feed/", "Ars Technica", true},
-	{"https://about.fb.com/news/tag/ai/feed/", "Meta AI", true},
+	{"https://techcrunch.com/category/artificial-intelligence/feed/", "TechCrunch", true},
+	{"https://www.theverge.com/rss/ai-artificial-intelligence/index.xml", "The Verge", true},
+	{"https://www.technologyreview.com/topic/artificial-intelligence/feed", "MIT Tech Review", true},
+	{"https://venturebeat.com/category/ai/feed/", "VentureBeat", true},
+	{"https://bair.berkeley.edu/blog/feed.xml", "Berkeley AI Research", true},
 	{"https://technews.tw/feed/", "科技新報 TechNews", false},
 }
 
@@ -347,26 +364,90 @@ func crawlRSS(feedURL, label string, aiOnly bool) ([]candidate, error) {
 // ---- merge / rank ----
 
 func dedupeAndRank(in []candidate) []candidate {
+	// 1) exact URL dedup
 	seen := map[string]bool{}
-	var out []candidate
+	var uniq []candidate
 	for _, c := range in {
 		k := normURL(c.URL)
 		if seen[k] {
 			continue
 		}
 		seen[k] = true
-		out = append(out, c)
+		uniq = append(uniq, c)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Score != out[j].Score {
-			return out[i].Score > out[j].Score
+	// 2) rank by score then recency
+	sort.Slice(uniq, func(i, j int) bool {
+		if uniq[i].Score != uniq[j].Score {
+			return uniq[i].Score > uniq[j].Score
 		}
-		return out[i].When.After(out[j].When)
+		return uniq[i].When.After(uniq[j].When)
 	})
-	if len(out) > maxCands {
-		out = out[:maxCands]
+	// 3) near-duplicate TITLE pass: two outlets covering the same event have
+	//    different URLs but overlapping titles. Keep the highest-ranked of each
+	//    cluster so the same story doesn't reach the draft twice.
+	var out []candidate
+	var keptTokens []map[string]bool
+	for _, c := range uniq {
+		tok := titleTokens(c.Title)
+		dup := false
+		for _, kt := range keptTokens {
+			if titleSimilar(tok, kt) {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		out = append(out, c)
+		keptTokens = append(keptTokens, tok)
+		if len(out) >= maxCands {
+			break
+		}
 	}
 	return out
+}
+
+// titleStop are low-signal words ignored when comparing titles.
+var titleStop = map[string]bool{
+	"the": true, "a": true, "an": true, "to": true, "of": true, "for": true, "and": true,
+	"in": true, "on": true, "with": true, "is": true, "are": true, "as": true, "at": true,
+	"by": true, "its": true, "new": true, "now": true, "ai": true, "how": true, "why": true,
+	"what": true, "from": true, "over": true, "into": true, "that": true,
+}
+
+// titleTokens reduces a title to its set of significant lowercased word tokens.
+func titleTokens(s string) map[string]bool {
+	m := map[string]bool{}
+	for _, w := range strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r)
+	}) {
+		if len(w) < 3 || titleStop[w] {
+			continue
+		}
+		m[w] = true
+	}
+	return m
+}
+
+// titleSimilar reports whether two token sets look like the same story (Jaccard
+// ≥ 0.6). Requires ≥4 significant tokens on each side so short/CJK titles (which
+// don't word-split) never trigger a false merge.
+func titleSimilar(a, b map[string]bool) bool {
+	if len(a) < 4 || len(b) < 4 {
+		return false
+	}
+	inter := 0
+	for w := range a {
+		if b[w] {
+			inter++
+		}
+	}
+	union := len(a) + len(b) - inter
+	if union == 0 {
+		return false
+	}
+	return float64(inter)/float64(union) >= 0.6
 }
 
 func normURL(u string) string {
@@ -412,7 +493,7 @@ func buildEditorPrompt(cands []candidate, n int) (system, user string, srcText m
 	srcText = map[string]string{}
 	var sb strings.Builder
 	for i, c := range cands {
-		if i >= 45 {
+		if i >= maxPromptCands {
 			break
 		}
 		srcText[c.URL] = strings.ToLower(c.Title + " " + c.Summary)
@@ -624,7 +705,7 @@ func writeCandidates(path string, cands []candidate) {
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "# Cli Times — candidates (%s)\n\n", time.Now().UTC().Format("2006-01-02 15:04 UTC"))
 	for i, c := range cands {
-		if i >= 45 {
+		if i >= maxPromptCands {
 			break
 		}
 		d := ""

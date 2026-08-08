@@ -21,7 +21,7 @@ name: publish-feed
 # so secrets are never reachable from a contributed PR.
 on:
   schedule:
-    - cron: "0 */12 * * *"   # every 12h UTC (content cadence); 72h expiry gives slack
+    - cron: "0 */6 * * *"   # every 6h UTC (content cadence); 72h expiry gives slack
   workflow_dispatch: {}
 
 # Least privilege: the default GITHUB_TOKEN can only read the repo and open the
@@ -55,7 +55,9 @@ jobs:
       - name: Curate — crawl + OpenAI draft (auto risk-flagging)
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: go run ./cmd/curate -n 18
+        # -n 30 is an UPPER TARGET, not a floor: the model returns up to 30 worthy
+        # items; thin days yield fewer, and -min-lines below guards the floor.
+        run: go run ./cmd/curate -n 30
 
       - name: Sign — drop flagged lines, require a real feed, 72h window
         run: |

@@ -66,6 +66,43 @@ func TestAttributeSource(t *testing.T) {
 	}
 }
 
+func TestTitleSimilar(t *testing.T) {
+	// Lexical dedup catches NEAR-IDENTICAL headlines (syndication / reposts).
+	a := titleTokens("OpenAI launches GPT-5.6 Sol reasoning upgrade for ChatGPT")
+	b := titleTokens("OpenAI launches GPT-5.6 Sol reasoning upgrade for ChatGPT users")
+	if !titleSimilar(a, b) {
+		t.Error("near-identical reposted headline should be detected as duplicate")
+	}
+	// Distinct products from the same vendor must NOT merge (Sol vs Luna).
+	c := titleTokens("OpenAI launches GPT-5.6 Sol reasoning model for developers")
+	d := titleTokens("OpenAI launches GPT-5.6 Luna image model for developers")
+	if titleSimilar(c, d) {
+		t.Error("distinct products (Sol vs Luna) must NOT be merged")
+	}
+	// Unrelated stories must not merge.
+	e := titleTokens("Oracle bars AI-generated code contributions from OpenJDK project")
+	if titleSimilar(a, e) {
+		t.Error("unrelated stories must not merge")
+	}
+}
+
+func TestDedupeDropsNearDuplicateTitles(t *testing.T) {
+	in := []candidate{
+		{Title: "OpenAI launches GPT-5.6 Sol reasoning upgrade for ChatGPT", URL: "https://a.com/x", Score: 300},
+		{Title: "OpenAI launches GPT-5.6 Sol reasoning upgrade for ChatGPT users", URL: "https://b.com/y", Score: 90},
+		{Title: "Oracle bars AI-generated contributions from OpenJDK project", URL: "https://c.com/z", Score: 498},
+	}
+	out := dedupeAndRank(in)
+	if len(out) != 2 {
+		t.Fatalf("want 2 after near-dup title merge, got %d: %+v", len(out), out)
+	}
+	for _, c := range out {
+		if c.Score == 90 {
+			t.Error("lower-ranked near-duplicate headline should have been dropped")
+		}
+	}
+}
+
 func TestFlagReason(t *testing.T) {
 	src := "openai ships gpt-5.5 with faster tool calls" // no numbers
 	// clean, high confidence, non-sensitive → cleared
