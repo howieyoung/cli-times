@@ -46,8 +46,23 @@ func TestParseAndFlagObjectWrapper(t *testing.T) {
 	if lines[1].Review == "" {
 		t.Error("line 1 (92% not in source) should be flagged")
 	}
-	if lines[2].Review == "" {
-		t.Error("line 2 (Anthropic/Claude) should be flagged")
+	if lines[2].Review != "" {
+		t.Errorf("line 2 (Anthropic/Claude) is now a KEPT category, should be cleared, got %q", lines[2].Review)
+	}
+}
+
+func TestAttributeSource(t *testing.T) {
+	cases := []struct{ modelSrc, url, want string }{
+		{"Hacker News", "https://arcprize.org/results/x", "ARC Prize"}, // discovery → derive
+		{"HN", "https://blog.cloudflare.com/kitesurf", "Cloudflare"},   // suffix match
+		{"", "https://www.theregister.com/a", "The Register"},          // blank → derive
+		{"The Register", "https://arstechnica.com/x", "The Register"},  // real byline → keep model's
+		{"Hacker News", "https://genesisopenmodels.anl.gov/", "Anl"},   // unknown host → generic fallback
+	}
+	for _, c := range cases {
+		if got := attributeSource(c.modelSrc, c.url); got != c.want {
+			t.Errorf("attributeSource(%q, %q) = %q, want %q", c.modelSrc, c.url, got, c.want)
+		}
 	}
 }
 
@@ -61,9 +76,13 @@ func TestFlagReason(t *testing.T) {
 	if r := flagReason("GPT-5.5 is 40% faster", src, "high", false); r == "" {
 		t.Error("unsupported number should be flagged")
 	}
-	// sensitive vendor → flagged
-	if r := flagReason("Anthropic ships Claude Code 2.2", "anthropic ships claude code 2.2", "high", false); r == "" {
-		t.Error("Anthropic/Claude topic should be flagged for human glance")
+	// Anthropic/Claude → NO LONGER flagged (wanted editorial category, Howie's call)
+	if r := flagReason("Anthropic ships Claude Code 2.2", "anthropic ships claude code 2.2", "high", false); r != "" {
+		t.Errorf("Anthropic/Claude should be kept now, got %q", r)
+	}
+	// medium confidence → KEPT (only low is dropped, to avoid a thin feed)
+	if r := flagReason("Some tool launched", "some tool launched today", "medium", false); r != "" {
+		t.Errorf("medium confidence should be kept, got %q", r)
 	}
 	// low confidence → flagged
 	if r := flagReason("Some tool launched", "some tool launched today", "low", false); r == "" {

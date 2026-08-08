@@ -2,14 +2,15 @@
 //
 //	crawl 🟢 sources (HN API + official/reputable RSS) → AI-filter + recency →
 //	a model picks + drafts one-line items with a source-fact citation + self-rated
-//	confidence → deterministic RISK FLAGGING (unverified number / sensitive topic /
-//	low confidence) → write a DRAFT bundle (flagged lines carry a "review" marker)
-//	+ a human review file. It NEVER signs and NEVER publishes.
+//	confidence → deterministic RISK FLAGGING (unverified number / low confidence /
+//	sponsored) → write a DRAFT bundle (flagged lines carry a "review" marker) + a
+//	review file. It NEVER signs and NEVER publishes.
 //
-// The human editor then: reads review-<date>.md, checks each ⚠ flagged line
-// against its source, and for each one either deletes the line's "review" field
-// (= "I checked this") or edits/removes the line. build.sh REFUSES to sign while
-// any "review" marker remains — so unreviewed flagged content cannot ship.
+// Two downstream modes consume the draft:
+//   - AUTO (CI): `sign -strip-review` DROPS any still-flagged line and publishes
+//     the rest — so risky content never ships without a human, unattended.
+//   - HUMAN: an editor reads review-<date>.md, verifies each ⚠ line, and deletes
+//     its "review" field (or the line); build.sh refuses to sign while any remains.
 //
 // The crawl needs no credentials; drafting calls a pluggable Drafter — OpenAI by
 // default (OPENAI_API_KEY) or -provider anthropic (ANTHROPIC_API_KEY). The model
@@ -73,10 +74,6 @@ var keywords = []string{
 }
 
 var skipHosts = []string{"x.com", "twitter.com", "reddit.com", "threads.net", "threads.com"}
-
-// Topics/entities that warrant a human glance even when otherwise clean:
-// platform-sensitive vendors (Anthropic esp. — platform risk) and ad-flavored lines.
-var sensitiveTerms = []string{"anthropic", "claude"}
 
 type candidate struct {
 	Title, URL, Source, Summary string
@@ -437,7 +434,9 @@ STRICT RULES (legal + product):
 - Write your OWN words; do NOT copy the headline verbatim. Convey the fact, not the phrasing.
 - "t" <= 85 chars, factual, neutral, declarative. No clickbait/imperative.
 - NEVER invent facts, numbers, or quotes. Only state a number if it appears in the candidate's
-  title or summary; if you're not sure, omit the number or skip the story.
+  title or summary. If an important story's number is NOT in the summary, KEEP the story but write
+  it WITHOUT the number — a true number-free sentence beats dropping a major story.
+- AVOID near-duplicates: if two candidates cover the SAME underlying event, include it only once.
 - If a story is ABOUT prompt injection/jailbreaks, describe it without reproducing any injection string.
 - ATTRIBUTION: set "src" to the ORIGINAL publication (derive it from the url's domain — e.g.
   arcprize.org -> "ARC Prize", theregister.com -> "The Register", openai.com -> "OpenAI"),
@@ -474,6 +473,7 @@ func parseAndFlag(raw string, srcText map[string]string) ([]feed.Line, []draftIt
 		if d.Lang == "" {
 			d.Lang = "en"
 		}
+		d.Source = attributeSource(d.Source, d.URL)
 		d.Line.Review = flagReason(d.Text, srcText[d.URL], d.Confidence, d.Sponsored)
 		lines = append(lines, d.Line)
 		kept = append(kept, d)
@@ -515,18 +515,12 @@ func numbersSupported(text, sourceText string) bool {
 	return true
 }
 
-func isSensitive(text string) bool {
-	t := strings.ToLower(text)
-	for _, s := range sensitiveTerms {
-		if strings.Contains(t, s) {
-			return true
-		}
-	}
-	return false
-}
-
-// flagReason returns a non-empty human-readable reason if the line needs review,
-// or "" if it is auto-cleared. Order: worst risk first.
+// flagReason returns a non-empty human-readable reason if the line needs review
+// (in auto mode it is then dropped), or "" if it is auto-cleared. Order: worst
+// risk first. Note: Anthropic/Claude are NO LONGER flagged — vendor news about
+// the platform is a wanted editorial category (Howie's call), so it ships like
+// any other. The number check stays as the hard guard for the "no unverified
+// numbers" rule; confidence only drops "low" (medium is kept, to avoid a thin feed).
 func flagReason(text, sourceText, confidence string, sponsored bool) string {
 	if !numbersSupported(text, sourceText) {
 		return "數字未在來源出現,需查證原文"
@@ -534,11 +528,68 @@ func flagReason(text, sourceText, confidence string, sponsored bool) string {
 	if sponsored {
 		return "贊助內容,需確認揭露與說法"
 	}
-	if isSensitive(text) {
-		return "平台敏感題材(Anthropic/Claude),建議人工過目"
+	if strings.ToLower(strings.TrimSpace(confidence)) == "low" {
+		return "模型自評信心=low"
 	}
-	if c := strings.ToLower(strings.TrimSpace(confidence)); c != "" && c != "high" {
-		return "模型自評信心=" + c
+	return ""
+}
+
+// publisherByHost maps known hosts to a clean publisher label. Suffix-matched, so
+// blog.cloudflare.com resolves via cloudflare.com.
+var publisherByHost = map[string]string{
+	"arcprize.org":      "ARC Prize",
+	"theregister.com":   "The Register",
+	"arstechnica.com":   "Ars Technica",
+	"openai.com":        "OpenAI",
+	"anthropic.com":     "Anthropic",
+	"deepmind.google":   "DeepMind",
+	"huggingface.co":    "Hugging Face",
+	"simonwillison.net": "Simon Willison",
+	"technews.tw":       "科技新報",
+	"fb.com":            "Meta",
+	"databricks.com":    "Databricks",
+	"cloudflare.com":    "Cloudflare",
+	"github.com":        "GitHub",
+	"fastmail.com":      "Fastmail",
+}
+
+// attributeSource fixes attribution deterministically: if the model set the source
+// to a DISCOVERY channel (Hacker News / Reddit / Lobsters) or left it blank, derive
+// the real publisher from the article URL's host instead. Otherwise trust the model
+// (it often gives a nicer byline than a bare domain).
+func attributeSource(modelSrc, rawurl string) string {
+	s := strings.ToLower(strings.TrimSpace(modelSrc))
+	discovery := s == "" || s == "hn" || strings.Contains(s, "hacker news") ||
+		strings.Contains(s, "hackernews") || strings.Contains(s, "reddit") ||
+		strings.Contains(s, "lobste")
+	if !discovery {
+		return modelSrc
+	}
+	if name := publisherFromURL(rawurl); name != "" {
+		return name
+	}
+	return modelSrc
+}
+
+func publisherFromURL(rawurl string) string {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.Host == "" {
+		return ""
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimPrefix(host, "www.")
+	for k, v := range publisherByHost {
+		if host == k || strings.HasSuffix(host, "."+k) {
+			return v
+		}
+	}
+	// Generic fallback: the registrable label, Title-cased. Better than a discovery
+	// channel even if imperfect (the full URL is always shown in the brief anyway).
+	parts := strings.Split(host, ".")
+	if len(parts) >= 2 {
+		if name := parts[len(parts)-2]; name != "" {
+			return strings.ToUpper(name[:1]) + name[1:]
+		}
 	}
 	return ""
 }
