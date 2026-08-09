@@ -1,4 +1,4 @@
-# Cli Times
+# CLI Times
 
 **A curated one-line AI-news ticker that lives in your AI coding CLI's wait state.**
 
