@@ -28,23 +28,35 @@ Type `cli-times today` any time to expand the full brief with source links.
 ## Install (macOS / Linux)
 
 Built **from source** via Homebrew — no unsigned prebuilt binary, no macOS
-Gatekeeper prompt, and you compile the exact public source.
+Gatekeeper prompt, and you compile the exact public source. **All three steps are
+required to see the ticker** — installing alone won't change your status line,
+because Claude Code only runs a status-line command you've opted into (step 3).
+
+**1. Install** (builds the renderer + updater; fetches the first brief):
 
 ```bash
 brew install howieyoung/tap/cli-times
-brew services start cli-times      # starts the ~6-hourly feed updater
 ```
 
-Then add this to `~/.claude/settings.json` (top-level object) and reopen Claude Code:
+**2. Start the auto-updater** (one pull-only HTTPS request every ~6h):
+
+```bash
+brew services start cli-times
+```
+
+**3. Turn on the status line** — add this to `~/.claude/settings.json` (top-level
+object), then reopen Claude Code. *(This step is what actually makes the ticker
+appear; `brew install` also prints this reminder.)*
 
 ```json
 "statusLine": { "type": "command", "command": "cli-times", "refreshInterval": 1 }
 ```
 
-That's it. The ticker appears in your status line; the leading braille mark animates
+Done — the ticker cycles in your status line, and the leading braille mark animates
 once per second while you wait.
 
-**See the full brief any time** (source links are clickable in modern terminals):
+**See the full brief any time** (works without step 3; source links are clickable
+in modern terminals):
 
 ```bash
 cli-times today
