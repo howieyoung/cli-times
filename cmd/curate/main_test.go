@@ -53,15 +53,41 @@ func TestParseAndFlagObjectWrapper(t *testing.T) {
 
 func TestAttributeSource(t *testing.T) {
 	cases := []struct{ modelSrc, url, want string }{
-		{"Hacker News", "https://arcprize.org/results/x", "ARC Prize"}, // discovery → derive
-		{"HN", "https://blog.cloudflare.com/kitesurf", "Cloudflare"},   // suffix match
-		{"", "https://www.theregister.com/a", "The Register"},          // blank → derive
-		{"The Register", "https://arstechnica.com/x", "The Register"},  // real byline → keep model's
-		{"Hacker News", "https://genesisopenmodels.anl.gov/", "Anl"},   // unknown host → generic fallback
+		{"Hacker News", "https://arcprize.org/results/x", "ARC Prize"},  // derive from URL
+		{"HN", "https://blog.cloudflare.com/kitesurf", "Cloudflare"},    // subdomain suffix
+		{"", "https://www.theregister.com/a", "The Register"},           // strip www
+		{"TechCrunch", "https://www.theverge.com/x", "The Verge"},       // model MISLABELED → URL wins
+		{"whatever", "https://deepmind.google/blog/x", "DeepMind"},      // exact beats .google suffix
+		{"x", "https://genesisopenmodels.anl.gov/", "Argonne / US DOE"}, // gov mapped
+		{"x", "https://social.treehouse.systems/@a", "Treehouse"},       // unknown → generic fallback
 	}
 	for _, c := range cases {
 		if got := attributeSource(c.modelSrc, c.url); got != c.want {
 			t.Errorf("attributeSource(%q, %q) = %q, want %q", c.modelSrc, c.url, got, c.want)
+		}
+	}
+}
+
+func TestHostSkipped(t *testing.T) {
+	skip := []string{
+		"https://app.dealroom.co/news/feed/x", // aggregator subdomain
+		"https://x.com/foo/status/1",
+		"https://www.reddit.com/r/x",
+		"https://news.ycombinator.com/item?id=1",
+	}
+	keep := []string{
+		"https://arstechnica.com/ai/x",
+		"https://openai.com/news/y",
+		"https://deepmind.google/blog/z",
+	}
+	for _, u := range skip {
+		if !hostSkipped(u) {
+			t.Errorf("expected %q to be skipped", u)
+		}
+	}
+	for _, u := range keep {
+		if hostSkipped(u) {
+			t.Errorf("expected %q to be kept", u)
 		}
 	}
 }

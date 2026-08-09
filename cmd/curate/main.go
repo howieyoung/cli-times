@@ -80,7 +80,9 @@ var feeds = []struct {
 	{"https://www.technologyreview.com/topic/artificial-intelligence/feed", "MIT Tech Review", true},
 	{"https://venturebeat.com/category/ai/feed/", "VentureBeat", true},
 	{"https://bair.berkeley.edu/blog/feed.xml", "Berkeley AI Research", true},
+	// Taiwan tech media (keyword-filtered; developer/IT-leaning)
 	{"https://technews.tw/feed/", "科技新報 TechNews", false},
+	{"https://www.ithome.com.tw/rss", "iThome", false},
 }
 
 var keywords = []string{
@@ -90,7 +92,12 @@ var keywords = []string{
 	"copilot", "cursor", "codex", "mcp", "hugging face", "pytorch", "tensor",
 }
 
-var skipHosts = []string{"x.com", "twitter.com", "reddit.com", "threads.net", "threads.com"}
+// skipHosts: platforms we never crawl (ToS) + link aggregators the content policy
+// forbids linking to (link must point to the original source, not a re-aggregator).
+var skipHosts = []string{
+	"x.com", "twitter.com", "reddit.com", "threads.net", "threads.com",
+	"dealroom.co", "news.ycombinator.com", "lobste.rs",
+}
 
 type candidate struct {
 	Title, URL, Source, Summary string
@@ -469,9 +476,20 @@ func titleMatches(title string) bool {
 }
 
 func hostSkipped(link string) bool {
-	l := strings.ToLower(link)
+	u, err := url.Parse(link)
+	if err != nil || u.Host == "" {
+		l := strings.ToLower(link) // parse failed → substring fallback
+		for _, h := range skipHosts {
+			if strings.Contains(l, h) {
+				return true
+			}
+		}
+		return false
+	}
+	host := strings.ToLower(u.Host)
+	host = strings.TrimPrefix(host, "www.")
 	for _, h := range skipHosts {
-		if strings.Contains(l, "://"+h) || strings.Contains(l, "://www."+h) {
+		if host == h || strings.HasSuffix(host, "."+h) { // exact or subdomain (app.dealroom.co)
 			return true
 		}
 	}
@@ -517,7 +535,11 @@ STRICT RULES (legal + product):
 - NEVER invent facts, numbers, or quotes. Only state a number if it appears in the candidate's
   title or summary. If an important story's number is NOT in the summary, KEEP the story but write
   it WITHOUT the number — a true number-free sentence beats dropping a major story.
-- AVOID near-duplicates: if two candidates cover the SAME underlying event, include it only once.
+- RELEVANCE: every item MUST be clearly about AI/ML (models, agents, dev tools, research, policy,
+  the AI industry). SKIP anything not really about AI (generic web/DNS/hardware/company news).
+- DEDUPLICATE hard: if several candidates describe the SAME underlying event — even with different
+  wording or from different outlets (e.g. two write-ups of one model launch, or a vendor blog + a
+  news recap of it) — include it ONCE, choosing the most authoritative/original source.
 - If a story is ABOUT prompt injection/jailbreaks, describe it without reproducing any injection string.
 - ATTRIBUTION: set "src" to the ORIGINAL publication (derive it from the url's domain — e.g.
   arcprize.org -> "ARC Prize", theregister.com -> "The Register", openai.com -> "OpenAI"),
@@ -615,37 +637,38 @@ func flagReason(text, sourceText, confidence string, sponsored bool) string {
 	return ""
 }
 
-// publisherByHost maps known hosts to a clean publisher label. Suffix-matched, so
-// blog.cloudflare.com resolves via cloudflare.com.
+// publisherByHost maps a host to a clean publisher label. Exact match wins; then
+// suffix match handles subdomains (blog.cloudflare.com → cloudflare.com).
 var publisherByHost = map[string]string{
-	"arcprize.org":      "ARC Prize",
-	"theregister.com":   "The Register",
-	"arstechnica.com":   "Ars Technica",
-	"openai.com":        "OpenAI",
-	"anthropic.com":     "Anthropic",
-	"deepmind.google":   "DeepMind",
-	"huggingface.co":    "Hugging Face",
-	"simonwillison.net": "Simon Willison",
-	"technews.tw":       "科技新報",
-	"fb.com":            "Meta",
-	"databricks.com":    "Databricks",
-	"cloudflare.com":    "Cloudflare",
-	"github.com":        "GitHub",
-	"fastmail.com":      "Fastmail",
+	"arcprize.org":         "ARC Prize",
+	"theregister.com":      "The Register",
+	"arstechnica.com":      "Ars Technica",
+	"openai.com":           "OpenAI",
+	"anthropic.com":        "Anthropic",
+	"deepmind.google":      "DeepMind",
+	"blog.google":          "Google",
+	"huggingface.co":       "Hugging Face",
+	"simonwillison.net":    "Simon Willison",
+	"technews.tw":          "科技新報",
+	"ithome.com.tw":        "iThome",
+	"fb.com":               "Meta",
+	"databricks.com":       "Databricks",
+	"cloudflare.com":       "Cloudflare",
+	"github.com":           "GitHub",
+	"fastmail.com":         "Fastmail",
+	"techcrunch.com":       "TechCrunch",
+	"theverge.com":         "The Verge",
+	"technologyreview.com": "MIT Tech Review",
+	"venturebeat.com":      "VentureBeat",
+	"bair.berkeley.edu":    "Berkeley AI Research",
+	"anl.gov":              "Argonne / US DOE",
 }
 
-// attributeSource fixes attribution deterministically: if the model set the source
-// to a DISCOVERY channel (Hacker News / Reddit / Lobsters) or left it blank, derive
-// the real publisher from the article URL's host instead. Otherwise trust the model
-// (it often gives a nicer byline than a bare domain).
+// attributeSource derives the source label from the article URL's host, ALWAYS —
+// the model can mislabel (e.g. tag a theverge.com link "TechCrunch"), so the link
+// is the source of truth. The model's own src is only a last resort when the URL
+// can't be parsed.
 func attributeSource(modelSrc, rawurl string) string {
-	s := strings.ToLower(strings.TrimSpace(modelSrc))
-	discovery := s == "" || s == "hn" || strings.Contains(s, "hacker news") ||
-		strings.Contains(s, "hackernews") || strings.Contains(s, "reddit") ||
-		strings.Contains(s, "lobste")
-	if !discovery {
-		return modelSrc
-	}
 	if name := publisherFromURL(rawurl); name != "" {
 		return name
 	}
@@ -659,13 +682,16 @@ func publisherFromURL(rawurl string) string {
 	}
 	host := strings.ToLower(u.Host)
 	host = strings.TrimPrefix(host, "www.")
-	for k, v := range publisherByHost {
-		if host == k || strings.HasSuffix(host, "."+k) {
+	if v, ok := publisherByHost[host]; ok { // exact match first
+		return v
+	}
+	for k, v := range publisherByHost { // then subdomain suffix
+		if strings.HasSuffix(host, "."+k) {
 			return v
 		}
 	}
-	// Generic fallback: the registrable label, Title-cased. Better than a discovery
-	// channel even if imperfect (the full URL is always shown in the brief anyway).
+	// Generic fallback: the registrable label, Title-cased. The full URL is always
+	// shown in the brief, so an imperfect label here is honest, not misleading.
 	parts := strings.Split(host, ".")
 	if len(parts) >= 2 {
 		if name := parts[len(parts)-2]; name != "" {

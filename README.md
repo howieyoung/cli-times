@@ -1,49 +1,163 @@
 # Cli Times
 
-CLI 等待區的 AI 日報 —— 在 AI coding CLI(先 Claude Code 的 statusLine)等待回應時,
-輪播一行由人工策展的 AI 新聞 / tips。免費使用;付費可追蹤特定議題;贊助管道備而不用。
+**A curated one-line AI-news ticker that lives in your AI coding CLI's wait state.**
 
-**實驗性專案**,與 Protico 完全切開。對外上線動作(marketplace 上架、宣傳)在 2026-08-15 之後。
-
-## 設計原則:拒絕 kickbacks 拿走的每一項能力
-
-內容是**純顯示資訊**,不可能變成指令。安全保證分三層:
-- **由建構保證**:renderer 無網路 / 無 shell / 無寫檔;色碼只出自常數表,feed 位元組
-  永不被拼進 escape 序列;永不輸出 OSC 8 / OSC 52 / 標題序列。
-- **靠測試擔保**:拒絕式消毒器(先 UTF-8 解碼 → codepoint 層擋控制字元/C1 →
-  按 Unicode 類別擋格式/結合字元 → 正面白名單 → NFKC → 寬度截斷),管線端與
-  renderer 端各實作一次,property-based fuzz 驗四不變量。
-- **最小化 + 可驗證**:程式碼永不自我更新;絕不寫 `~/.claude/settings.json`;
-  Ed25519 簽章先驗後解析、fail-closed;零客戶端遙測。
-
-## 佈局
+While Claude Code (and other AI CLIs) sit idle waiting for a response, your status
+line quietly cycles a hand-curated headline of what's new in AI — models, agent
+tooling, research, and official product releases developers should know about.
 
 ```
-cmd/renderer     statusLine 腳本:讀 cache → 驗章 → 選行 → 消毒 → 印一行(Go 靜態二進位)
-cmd/updater      唯一觸網元件:每 ~6h 抓簽章 feed、先驗後原子寫入、fail-closed
-cmd/sign         離線簽章工具:keygen / bundle(私鑰永不上線)
-cmd/curate       半自動內容管線:crawl → 起草 → 風險標記 → 產草稿
-internal/sanitize 安全核心:拒絕式消毒器 + property fuzz
-internal/feed    簽章 bundle 格式 + Ed25519 驗證(先驗後解析、大小上限、防重放)
-packaging/       Homebrew formula + launchd/systemd 定時器範本
-harness/         escape-sequence 探針、端到端 demo、context-leak 測試、RESULTS.md
-feed-bundles/    範例 / 產出的內容 bundle
+ ⠋ CT: New open-weight model tops the latest agentic-coding benchmark   · official blog
 ```
 
-## 開發
+Type `cli-times today` any time to expand the full brief with source links.
+
+- **Free.** No account, no telemetry, no API tokens consumed.
+- **Safe by construction.** The status-line renderer has *zero* network code and
+  cannot run commands — it reads one local, cryptographically-signed file and
+  prints one line. Bad or expired content shows *nothing* rather than anything
+  suspicious (fail-closed).
+- **Opt-in and reversible.** You paste one line into your own settings; uninstall
+  is three commands.
+
+> Experimental project, independent of any vendor. Not affiliated with or endorsed
+> by Anthropic.
+
+---
+
+## Install (macOS / Linux)
+
+Built **from source** via Homebrew — no unsigned prebuilt binary, no macOS
+Gatekeeper prompt, and you compile the exact public source.
 
 ```bash
-export PATH=/opt/homebrew/bin:$PATH
-go test ./...                                              # 全測試
-go test ./internal/sanitize -run=xxx -fuzz=FuzzClean -fuzztime=30s   # 消毒器 fuzz
-bash harness/e2e-demo.sh                                   # 端到端 + fail-closed 驗證
+brew install howieyoung/tap/cli-times
+brew services start cli-times      # starts the ~6-hourly feed updater
 ```
 
-## 狀態(2026-08-08)
+Then add this to `~/.claude/settings.json` (top-level object) and reopen Claude Code:
 
-- ✅ 安全核心(消毒器 / 驗章 / renderer)建置並通過測試 + 230 萬次 fuzz;經兩輪對抗性審查
-  (架構層 16 項、程式碼層 5 項)全數修訂。
-- ⏳ 三項 launch-gating 實測需互動 session 完成(見 `harness/RESULTS.md §B`)。
-- ⏳ 內容管線(爬蟲 → 去重 → AI 起草 → 人工審 → 簽章)、updater、安裝流程。
+```json
+"statusLine": { "type": "command", "command": "cli-times", "refreshInterval": 1 }
+```
 
-完整技術架構、內容守則與研究基礎為內部文件,不隨公開源碼發佈。
+That's it. The ticker appears in your status line; the leading braille mark animates
+once per second while you wait.
+
+**See the full brief any time** (source links are clickable in modern terminals):
+
+```bash
+cli-times today
+```
+
+> If the status line is blank, the signed feed hasn't landed yet — run
+> `cli-times today` to check, or wait for the updater's next run.
+> Prefer no animation? Set `CLI_TIMES_NO_ANIM=1`, or drop `refreshInterval`.
+
+---
+
+## What you get
+
+| | |
+|---|---|
+| **Curated, not scraped** | Headlines are AI-drafted from reputable/official sources, risk-checked, and signed before they ship. One self-written sentence + a link to the original source. |
+| **Fresh** | A new signed brief is published every ~6 hours; your machine pulls it with one HTTPS request on the same cadence. |
+| **Source-guaranteed** | Every ticker line ends with its publication; the expanded brief shows the full URL. |
+| **Bilingual-ready** | Source and display language are user-selectable (English / 繁體中文). |
+| **Costs you nothing** | The status line runs locally and consumes no API tokens. See [Privacy & cost](#privacy--cost). |
+
+---
+
+## How it works
+
+Three small Go programs with a deliberately strict split of responsibilities:
+
+```
+cmd/renderer   The status-line program. ZERO network, no shell, no writes.
+               Reads one local cache file → verifies the signature → prints one line.
+cmd/updater    The ONLY networked component. Every ~6h: one pull-only HTTPS GET of
+               the signed feed → verify → atomic replace of the local cache. Fail-closed.
+cmd/sign       Offline signing tool. The private key never touches a server or CI*.
+cmd/curate     The editorial pipeline: crawl approved sources → draft → risk-flag.
+```
+
+The feed is an **Ed25519-signed bundle**. The signature is verified *before* the
+JSON is parsed, against a public key **pinned into the binary at build time**, under
+a hard size cap. Text is run through a rejection-based sanitizer (Unicode-category
+filtering + positive allowlist) so nothing can smuggle escape sequences or invisible
+characters into your terminal. Anything that fails any check renders as blank.
+
+The renderer is intentionally powerless: it never reads your prompts, code, or
+files, never writes to `~/.claude/settings.json`, and never updates its own code.
+
+<sub>*In automated publishing, the signing key lives only in a protected CI secret and
+is wiped after each run.</sub>
+
+---
+
+## Privacy & cost
+
+- **$0 to you.** Anthropic's own docs note a status-line command "runs locally and
+  does not consume API tokens." The renderer has no network code at all — it reads
+  one file and prints one line, so it never calls any AI API or touches your
+  Claude / Codex account.
+- **No telemetry.** The renderer sends nothing. The separate updater makes one
+  pull-only HTTPS request to a CDN every ~6h to fetch the day's brief; the CDN sees
+  your IP like any download, and we receive only aggregate request counts — no
+  identifiers, cookies, or content are sent back.
+
+---
+
+## Uninstall
+
+```bash
+# 1) remove the statusLine block you added to ~/.claude/settings.json
+brew services stop cli-times
+brew uninstall cli-times
+brew untap howieyoung/tap        # optional
+rm -rf ~/.cache/cli-times        # cached feed + logs
+```
+
+---
+
+## Build from source (development)
+
+Requires Go (see `go.mod` for the version).
+
+```bash
+go build ./...
+go test ./...                                                   # unit tests
+go test ./internal/sanitize -run=xxx -fuzz=FuzzClean -fuzztime=30s   # sanitizer fuzz
+```
+
+Layout:
+
+```
+cmd/renderer      status-line renderer (zero-network)
+cmd/updater       the one networked component (fetch + verify + atomic write)
+cmd/sign          offline Ed25519 signing tool (keygen / bundle)
+cmd/curate        editorial pipeline (crawl → draft → risk-flag)
+internal/sanitize rejection-based text sanitizer + property fuzz
+internal/feed     signed-bundle format + verify-before-parse
+packaging/        Homebrew formula + launchd/systemd timer templates
+```
+
+---
+
+## Content
+
+Cli Times scans a broad range of reputable places across the web — official
+vendor and research blogs, major technology outlets, and regional tech media —
+and surfaces the handful of items that actually matter to developers. We don't
+favor any single publisher: each cycle we pick the most relevant stories wherever
+they appear, rewrite each in our own words, and link back to the original. Numbers
+that can't be grounded in the source are dropped, not guessed.
+
+**Building something in AI developers should know about** — a launch, a tool, a
+paper, a community? Tell us: **howie@protico.io**.
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
